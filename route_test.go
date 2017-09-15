@@ -4,6 +4,7 @@ package netlink
 
 import (
 	"net"
+	"strconv"
 	"syscall"
 	"testing"
 	"time"
@@ -626,4 +627,190 @@ func TestMPLSRouteAddDel(t *testing.T) {
 		t.Fatal("Route not removed properly")
 	}
 
+}
+
+func TestRouteEqual(t *testing.T) {
+	mplsDst := 100
+	cases := []Route{
+		Route{
+			Dst: nil,
+			Gw:  net.IPv4(1, 1, 1, 1),
+		},
+		Route{
+			LinkIndex: 20,
+			Dst:       nil,
+			Gw:        net.IPv4(1, 1, 1, 1),
+		},
+		Route{
+			ILinkIndex: 21,
+			LinkIndex:  20,
+			Dst:        nil,
+			Gw:         net.IPv4(1, 1, 1, 1),
+		},
+		Route{
+			LinkIndex: 20,
+			Dst:       nil,
+			Protocol:  20,
+			Gw:        net.IPv4(1, 1, 1, 1),
+		},
+		Route{
+			LinkIndex: 20,
+			Dst:       nil,
+			Priority:  20,
+			Gw:        net.IPv4(1, 1, 1, 1),
+		},
+		Route{
+			LinkIndex: 20,
+			Dst:       nil,
+			Type:      20,
+			Gw:        net.IPv4(1, 1, 1, 1),
+		},
+		Route{
+			LinkIndex: 20,
+			Dst:       nil,
+			Table:     200,
+			Gw:        net.IPv4(1, 1, 1, 1),
+		},
+		Route{
+			LinkIndex: 20,
+			Dst:       nil,
+			Tos:       1,
+			Gw:        net.IPv4(1, 1, 1, 1),
+		},
+		Route{
+			LinkIndex: 20,
+			Dst:       nil,
+			Flags:     int(FLAG_ONLINK),
+			Gw:        net.IPv4(1, 1, 1, 1),
+		},
+		Route{
+			LinkIndex: 10,
+			Dst: &net.IPNet{
+				IP:   net.IPv4(192, 168, 0, 0),
+				Mask: net.CIDRMask(24, 32),
+			},
+			Src: net.IPv4(127, 1, 1, 1),
+		},
+		Route{
+			LinkIndex: 10,
+			Scope:     syscall.RT_SCOPE_LINK,
+			Dst: &net.IPNet{
+				IP:   net.IPv4(192, 168, 0, 0),
+				Mask: net.CIDRMask(24, 32),
+			},
+			Src: net.IPv4(127, 1, 1, 1),
+		},
+		Route{
+			LinkIndex: 3,
+			Dst: &net.IPNet{
+				IP:   net.IPv4(1, 1, 1, 1),
+				Mask: net.CIDRMask(32, 32),
+			},
+			Src:      net.IPv4(127, 3, 3, 3),
+			Scope:    syscall.RT_SCOPE_LINK,
+			Priority: 13,
+			Table:    syscall.RT_TABLE_MAIN,
+			Type:     syscall.RTN_UNICAST,
+			Tos:      14,
+		},
+		Route{
+			LinkIndex: 10,
+			MPLSDst:   &mplsDst,
+			NewDst: &MPLSDestination{
+				Labels: []int{200, 300},
+			},
+		},
+		Route{
+			Dst: nil,
+			Gw:  net.IPv4(1, 1, 1, 1),
+			Encap: &MPLSEncap{
+				Labels: []int{100},
+			},
+		},
+		Route{
+			Dst:       nil,
+			MultiPath: []*NexthopInfo{&NexthopInfo{LinkIndex: 10}, &NexthopInfo{LinkIndex: 20}},
+		},
+		Route{
+			Dst: nil,
+			MultiPath: []*NexthopInfo{&NexthopInfo{
+				LinkIndex: 10,
+				Gw:        net.IPv4(1, 1, 1, 1),
+			}, &NexthopInfo{LinkIndex: 20}},
+		},
+		Route{
+			Dst: nil,
+			MultiPath: []*NexthopInfo{&NexthopInfo{
+				LinkIndex: 10,
+				Gw:        net.IPv4(1, 1, 1, 1),
+				Encap: &MPLSEncap{
+					Labels: []int{100},
+				},
+			}, &NexthopInfo{LinkIndex: 20}},
+		},
+		Route{
+			Dst: nil,
+			MultiPath: []*NexthopInfo{&NexthopInfo{
+				LinkIndex: 10,
+				NewDst: &MPLSDestination{
+					Labels: []int{200, 300},
+				},
+			}, &NexthopInfo{LinkIndex: 20}},
+		},
+	}
+	for i1 := range cases {
+		for i2 := range cases {
+			got := cases[i1].Equal(cases[i2])
+			expected := i1 == i2
+			if got != expected {
+				t.Errorf("Equal(%q,%q) == %s but expected %s",
+					cases[i1], cases[i2],
+					strconv.FormatBool(got),
+					strconv.FormatBool(expected))
+			}
+		}
+	}
+}
+
+func TestIPNetEqual(t *testing.T) {
+	cases := []string{
+		"1.1.1.1/24", "1.1.1.0/24", "1.1.1.1/32",
+		"0.0.0.0/0", "0.0.0.0/14",
+		"2001:db8::/32", "2001:db8::/128",
+		"2001:db8::caff/32", "2001:db8::caff/128",
+		"",
+	}
+	for _, c1 := range cases {
+		var n1 *net.IPNet
+		if c1 != "" {
+			var i1 net.IP
+			var err1 error
+			i1, n1, err1 = net.ParseCIDR(c1)
+			if err1 != nil {
+				panic(err1)
+			}
+			n1.IP = i1
+		}
+		for _, c2 := range cases {
+			var n2 *net.IPNet
+			if c2 != "" {
+				var i2 net.IP
+				var err2 error
+				i2, n2, err2 = net.ParseCIDR(c2)
+				if err2 != nil {
+					panic(err2)
+				}
+				n2.IP = i2
+			}
+
+			got := ipNetEqual(n1, n2)
+			expected := c1 == c2
+			if got != expected {
+				t.Errorf("IPNetEqual(%q,%q) == %s but expected %s",
+					c1, c2,
+					strconv.FormatBool(got),
+					strconv.FormatBool(expected))
+			}
+		}
+	}
 }
